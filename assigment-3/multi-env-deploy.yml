@@ -1,0 +1,132 @@
+name: Multi-Environment Deployment with Notifications
+
+on:
+  push:
+    branches:
+      - main
+      - staging
+
+permissions:
+  contents: read  # Allows checking out the repo
+
+jobs:
+  deploy-staging:
+    if: github.ref == 'refs/heads/staging'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Record start time
+        id: start
+        run: echo "start_time=$(date +%s)" >> $GITHUB_OUTPUT
+
+      - name: Build application
+        run: |
+          # Replace with your actual build command, e.g., npm install && npm build
+          echo "Building for staging..."
+          sleep 5  # Simulate build time; remove in real use
+
+      - name: Record end time and calculate duration
+        id: duration
+        run: |
+          end_time=$(date +%s)
+          duration=$((end_time - ${{ steps.start.outputs.start_time }}))
+          echo "Build duration: $duration seconds"
+          echo "build_duration=$duration" >> $GITHUB_OUTPUT
+
+      - name: Deploy to staging
+        run: |
+          # Replace with your actual deploy command, e.g., aws deploy --using ${{ secrets.STAGING_SSH_PRIVATE_KEY
+ }}
+          echo "Deploying to staging using secret: ${{ secrets.STAGING_SSH_PRIVATE_KEY
+ }}"
+
+      - name: Send Slack notification
+        uses: slackapi/slack-github-action@v1.26.0
+        with:
+          payload: |
+            {
+              "text": "Deployment to Staging Complete!\nCommit: ${{ github.sha }}\nMessage: ${{ github.event.head_commit.message }}\nAuthor: ${{ github.actor }}\nBuild Duration: ${{ steps.duration.outputs.build_duration }} seconds\nView: ${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}"
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+
+      - name: Send email notification
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: ${{ secrets.EMAIL_SMTP_SERVER }}  # e.g., smtp.gmail.com
+          server_port: 465
+          username: ${{ secrets.EMAIL_USERNAME }}
+          password: ${{ secrets.EMAIL_PASSWORD }}
+          subject: "Staging Deployment Complete"
+          to: ${{ secrets.EMAIL_TO }}
+          from: GitHub Actions <no-reply@github.com>
+          body: |
+            Deployment to Staging Complete!
+            Commit: ${{ github.sha }}
+            Message: ${{ github.event.head_commit.message }}
+            Author: ${{ github.actor }}
+            Build Duration: ${{ steps.duration.outputs.build_duration }} seconds
+            View: ${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}
+
+
+  deploy-production:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Record start time
+        id: start
+        run: echo "start_time=$(date +%s)" >> $GITHUB_OUTPUT
+
+      - name: Build application
+        run: |
+          # Replace with your actual build command, e.g., npm install && npm build
+          echo "Building for production..."
+          sleep 5  # Simulate build time; remove in real use
+
+      - name: Record end time and calculate duration
+        id: duration
+        run: |
+          end_time=$(date +%s)
+          duration=$((end_time - ${{ steps.start.outputs.start_time }}))
+          echo "Build duration: $duration seconds"
+          echo "build_duration=$duration" >> $GITHUB_OUTPUT
+
+      - name: Deploy to production
+        run: |
+          # Replace with your actual deploy command, e.g., aws deploy --using ${{ secrets.PROD_DEPLOY_TOKEN }}
+          echo "Deploying to production using secret: ${{ secrets.PROD_DEPLOY_TOKEN }}"
+
+      - name: Send Slack notification
+        uses: slackapi/slack-github-action@v1.26.0
+        with:
+          payload: |
+            {
+              "text": "Deployment to Production Complete!\nCommit: ${{ github.sha }}\nMessage: ${{ github.event.head_commit.message }}\nAuthor: ${{ github.actor }}\nBuild Duration: ${{ steps.duration.outputs.build_duration }} seconds\nView: ${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}"
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+
+      - name: Send email notification
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: ${{ secrets.EMAIL_SMTP_SERVER }}  # e.g., smtp.gmail.com
+          server_port: 465
+          username: ${{ secrets.EMAIL_USERNAME }}
+          password: ${{ secrets.EMAIL_PASSWORD }}
+          subject: "Production Deployment Complete"
+          to: ${{ secrets.EMAIL_TO }}
+          from: GitHub Actions <no-reply@github.com>
+          body: |
+            Deployment to Production Complete!
+            Commit: ${{ github.sha }}
+            Message: ${{ github.event.head_commit.message }}
+            Author: ${{ github.actor }}
+            Build Duration: ${{ steps.duration.outputs.build_duration }} seconds
+            View: ${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}

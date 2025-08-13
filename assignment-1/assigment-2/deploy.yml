@@ -1,0 +1,98 @@
+name: Staging — Approval-based deploy
+
+on:
+  push:
+    branches: ["staging"]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # change to your build steps
+      - name: Build
+        run: |
+          echo "Build step — change to your build commands"
+          # e.g. npm ci && npm run build
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: build
+          path: ./build   # change to your build output
+
+  notify_pending_approval:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Notify approvers (Mailgun)
+        env:
+          MAILGUN_API_KEY: ${{ secrets.MAILGUN_API_KEY }}
+          MAILGUN_DOMAIN: ${{ secrets.MAILGUN_DOMAIN }}
+          STAKEHOLDERS: ${{ secrets.STAKEHOLDERS_EMAILS }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+          # GitHub runner env vars (already present): GITHUB_REPOSITORY, GITHUB_REF, GITHUB_RUN_ID, GITHUB_SERVER_URL
+        run: |
+          BRANCH="${GITHUB_REF#refs/heads/}"
+          SUBJECT="Approval needed: Deploy to staging — ${GITHUB_REPOSITORY} (${BRANCH})"
+          BODY="A deployment to *staging* is pending approval.\n\nRepository: ${GITHUB_REPOSITORY}\nBranch: ${BRANCH}\nRun: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}\n\nPlease review and approve the run in GitHub Actions."
+          curl -s --user "api:${MAILGUN_API_KEY}" \
+            "https://api.mailgun.net/v3/${MAILGUN_DOMAIN}/messages" \
+            -F from="${EMAIL_FROM}" \
+            -F to="${STAKEHOLDERS}" \
+            -F subject="${SUBJECT}" \
+            -F text="${BODY}"
+
+  deploy:
+    needs: [build, notify_pending_approval]
+    runs-on: ubuntu-latest
+    environment: staging     # <-- GitHub will pause here for approval if the environment requires reviewers
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download build
+        uses: actions/download-artifact@v4
+        with:
+          name: build
+      - name: Deploy to staging
+        run: |
+          echo "Deploy commands go here"
+          # e.g. ./scripts/deploy-staging.sh
+      # After approval and deployment, this job will complete and downstream jobs run.
+
+  notify_post_deploy:
+    needs: deploy
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Send success email
+        if: needs.deploy.result == 'success'
+        env:
+          MAILGUN_API_KEY: ${{ secrets.MAILGUN_API_KEY }}
+          MAILGUN_DOMAIN: ${{ secrets.MAILGUN_DOMAIN }}
+          STAKEHOLDERS: ${{ secrets.STAKEHOLDERS_EMAILS }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+        run: |
+          SUBJECT="Deployment SUCCESS: staging — ${GITHUB_REPOSITORY}"
+          BODY="Deployment succeeded.\nRun: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          curl -s --user "api:${MAILGUN_API_KEY}" \
+            "https://api.mailgun.net/v3/${MAILGUN_DOMAIN}/messages" \
+            -F from="${EMAIL_FROM}" \
+            -F to="${STAKEHOLDERS}" \
+            -F subject="${SUBJECT}" \
+            -F text="${BODY}"
+
+      - name: Send failure email
+        if: needs.deploy.result != 'success'
+        env:
+          MAILGUN_API_KEY: ${{ secrets.MAILGUN_API_KEY }}
+          MAILGUN_DOMAIN: ${{ secrets.MAILGUN_DOMAIN }}
+          STAKEHOLDERS: ${{ secrets.STAKEHOLDERS_EMAILS }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+        run: |
+          SUBJECT="Deployment FAILED: staging — ${GITHUB_REPOSITORY}"
+          BODY="Deployment failed. Check the run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          curl -s --user "api:${MAILGUN_API_KEY}" \
+            "https://api.mailgun.net/v3/${MAILGUN_DOMAIN}/messages" \
+            -F from="${EMAIL_FROM}" \
+            -F to="${STAKEHOLDERS}" \
+            -F subject="${SUBJECT}" \
+            -F text="${BODY}"

@@ -1,0 +1,65 @@
+name: Deploy to Staging
+
+on:
+  push:
+    branches: ["staging"]
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # ---------------------
+      # Build step (example)
+      # Replace with your project's real build commands
+      - name: Install & build (Rails example)
+        if: "startsWith(github.event.head_commit.message, 'skip-build') == false"
+        run: |
+          # If you're using Rails:
+          gem install bundler
+          bundle install --jobs 4 --retry 3
+          RAILS_ENV=production bundle exec rake assets:precompile
+
+          # OR for Node.js projects, comment above and use:
+          # npm ci
+          # npm run build
+
+      # ---------------------
+      # Load SSH key into ssh-agent
+      - name: Start ssh-agent and add key
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+
+      - name: Add host to known_hosts (avoids interactive prompt)
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H "${{ secrets.STAGING_SERVER }}" >> ~/.ssh/known_hosts
+
+      # ---------------------
+      # Rsync files to the remote server
+      - name: Rsync to staging server
+        env:
+          REMOTE_USER: ${{ secrets.STAGING_USER }}
+          REMOTE_HOST: ${{ secrets.STAGING_SERVER }}
+          REMOTE_PATH: ${{ secrets.STAGING_PATH }}
+        run: |
+          # Adjust --exclude if you don't want to copy .git, node_modules, etc.
+          rsync -avz --delete --exclude='.git' ./ $REMOTE_USER@$REMOTE_HOST:$REMOTE_PATH
+
+      # ---------------------
+      # Slack notification on success
+      - name: Slack notification - success
+        if: success()
+        run: |
+          payload="{\"text\":\"✅ Deployment to *staging* succeeded for ${GITHUB_REPOSITORY} (${GITHUB_REF#refs/heads/}) by ${GITHUB_ACTOR}. <${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}|View run>\"}"
+          curl -X POST -H 'Content-type: application/json' --data "$payload" "${{ secrets.SLACK_WEBHOOK_URL }}"
+
+      # Slack notification on failure (optional)
+      - name: Slack notification - failure
+        if: failure()
+        run: |
+          payload="{\"text\":\"❌ Deployment to *staging* FAILED for ${GITHUB_REPOSITORY} (${GITHUB_REF#refs/heads/}) by ${GITHUB_ACTOR}. <${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}|View run>\"}"
+          curl -X POST -H 'Content-type: application/json' --data "$payload" "${{ secrets.SLACK_WEBHOOK_URL }}"

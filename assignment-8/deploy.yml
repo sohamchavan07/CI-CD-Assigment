@@ -1,0 +1,78 @@
+#This code is for my porsche rpo on github i will use this in my that project
+
+name: Deploy to Vercel
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch: {}  # lets you trigger manually
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    env:
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build app
+        run: npm run build
+
+      - name: Install Vercel CLI
+        run: npm i -g vercel@latest
+
+      - name: Pull Vercel env (prod)
+        run: vercel pull --yes --environment=production --token "$VERCEL_TOKEN"
+
+      - name: Build (Vercel)
+        run: vercel build --prod --token "$VERCEL_TOKEN"
+
+      - name: Deploy (Vercel)
+        id: vercel_deploy
+        run: |
+          URL=$(vercel deploy --prebuilt --prod --token "$VERCEL_TOKEN" | tail -n 1)
+          echo "DEPLOY_URL=$URL" >> $GITHUB_ENV
+          echo "deploy_url=$URL" >> $GITHUB_OUTPUT
+
+      - name: Send success email
+        if: success()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: ${{ secrets.SMTP_HOST }}
+          server_port: ${{ secrets.SMTP_PORT }}
+          username: ${{ secrets.SMTP_USERNAME }}
+          password: ${{ secrets.SMTP_PASSWORD }}
+          subject: "✅ Vercel deploy succeeded — ${{ github.repository }}"
+          to: ${{ secrets.MAIL_TO }}
+          from: ${{ secrets.MAIL_FROM }}
+          content_type: text/html
+          html_body: |
+            <p>Deployment succeeded.</p>
+            <p><b>URL:</b> <a href="${{ env.DEPLOY_URL }}">${{ env.DEPLOY_URL }}</a></p>
+
+      - name: Send failure email
+        if: failure()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: ${{ secrets.SMTP_HOST }}
+          server_port: ${{ secrets.SMTP_PORT }}
+          username: ${{ secrets.SMTP_USERNAME }}
+          password: ${{ secrets.SMTP_PASSWORD }}
+          subject: "❌ Vercel deploy failed — ${{ github.repository }}"
+          to: ${{ secrets.MAIL_TO }}
+          from: ${{ secrets.MAIL_FROM }}
+          content_type: text/html
+          html_body: |
+            <p>Deployment failed. Check logs:</p>
+            <p><a href="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}">Logs</a></p>
